@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+
+import argparse
+import math
+import sys
+
+parser = argparse.ArgumentParser(description='convert a raw data image to a compressed zpl image')
+parser.add_argument('image_filename', type=str, help='file to render')
+parser.add_argument('width', type=int, help='width of image in px')
+parser.add_argument('height', type=int, help='height of image in px')
+args = parser.parse_args()
+
+
+data = None
+with open(args.image_filename, 'rb') as f:
+    data = f.read().decode('LATIN1')
+
+if data is None:
+    print(f"File '{args.image_filename}' could not be read", file=sys.stderr)
+
+# "Alternative Data Compression Scheme for ~DG and ~DB Commands"
+# It's a form of Run length encoding.
+# Z isn't in the offical docs because g is 20, but z is, so we're just
+# do this.
+run_length = "GHIJKLMNOPQRSTUVWXYZ"
+for ri, r in enumerate(run_length):
+    # starts at 1
+    ri += 1
+    i = data.find(r)
+    while i >= 0:
+        c = data[i+1]
+        # +2 because we need to replace the char we're duplicating
+        # as well.
+        data = data[0:i] + (c*ri) + data[i+2:]
+        i = data.find(r)
+    ri *= 20
+    r = r.lower()
+    i = data.find(r)
+    while i >= 0:
+        c = data[i+1]
+        data = data[0:i] + (c*ri) + data[i+2:]
+        i = data.find(r)
+print(data, end='')

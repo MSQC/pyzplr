@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+
+import argparse
+import math
+import sys
+from pathlib import Path
+
+parser = argparse.ArgumentParser(description='convert a raw data image to a compressed zpl image')
+parser.add_argument('image_filename', type=str, help='file to render')
+parser.add_argument('width', type=int, help='width of image in px')
+parser.add_argument('height', type=int, help='height of image in px')
+args = parser.parse_args()
+
+
+encoded_image = None
+with open(args.image_filename, 'rb') as f:
+    encoded_image = f.read().decode('LATIN1').strip()
+
+if encoded_image is None:
+    print(f"File '{args.image_filename}' could not be read", file=sys.stderr)
+    sys.exit(-2)
+if math.ceil(args.width / 8) != math.floor(args.width / 8):
+    print(f"Width {args.width} is not divisible by 8", file=sys.stderr)
+    sys.exit(-2)
+
+basefilename = Path(args.image_filename).stem
+
+total_bytes = int((args.width * args.height) / 8)
+bytes_per_row = int(args.width / 8 )
+
+dpi = 200
+label_width = 4 * dpi
+label_height = 6 * dpi
+
+start_x = int((label_width - args.width) / 2)
+start_y = int((label_height - args.height) / 2)
+
+print(f"~DGe:{basefilename}.GRF,{total_bytes:d},{bytes_per_row:d},{encoded_image}")
+
+

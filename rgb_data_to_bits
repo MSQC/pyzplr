@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+
+import argparse
+import math
+import sys
+
+parser = argparse.ArgumentParser(description='convert a raw data image to a compressed zpl image')
+parser.add_argument('image_filename', type=str, help='file to render')
+args = parser.parse_args()
+
+
+infile = None
+with open(args.image_filename, 'rb') as f:
+    infile = f.read()
+
+if infile is None:
+    print(f"File '{args.image_filename}' could not be read", file=sys.stderr)
+
+infile_len = len(infile)
+
+def read_pairs(f):
+    while f:
+        a = next(f)
+        b = next(f)
+        yield (a << 8) + b
+
+def pixel_to_bit(f):
+    for p in f:
+        yield not(p > 128)
+
+def bits_to_nibble(f):
+    dp = True
+    while dp is not None:
+        a = next(f, None)
+        if a is None:
+            break
+        b = next(f, False)
+        c = next(f, False)
+        dp = next(f, None)
+        d = dp is not None
+        binary = "{0:d}{1:d}{2:d}{3:d}".format(a, b, c, d)
+        h = "{0:x}".format(int(binary,2))
+        yield h
+
+hex_bit_image = list(bits_to_nibble(pixel_to_bit(read_pairs(iter(infile)))))
+
+predicted_bits = math.ceil(infile_len / 2)
+predicted_nibbles = math.ceil(predicted_bits / 4)
+actual_nibbles = len(hex_bit_image)
+
+if actual_nibbles != predicted_nibbles:
+    print(f"Wrong number of nibbles computed! (Predicted: {predicted_nibbles} Actual: {actual_nibbles})", file=sys.stderr)
+    sys.exit(1)
+
+print("".join(hex_bit_image), end='')

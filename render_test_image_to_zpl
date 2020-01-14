@@ -1,0 +1,33 @@
+#!/bin/bash
+set -e
+
+FILE=$1
+
+[ -z $FILE ] && exit 1
+[ -e $FILE ] || exit 2
+
+TYPE=`exiftool $FILE | grep "File Type" | cut -d : -f 2 | head -n 1 | tr -d ' '`
+
+[ "$TYPE" != 'PNG' ] && exit 5
+
+WIDTH=`exiftool $FILE | grep "Image Width" | cut -d : -f 2 | tr -d ' '`
+HEIGHT=`exiftool $FILE | grep "Image Height" | cut -d : -f 2 | tr -d ' '`
+
+[ -z $WIDTH ] && exit 3
+[ -z $HEIGHT ] && exit 4
+
+echo "$FILE W=$WIDTH H=$HEIGHT"
+
+HEX=`basename $FILE .png`.hex
+HEXCOMP=`basename $FILE .png`.hex.compressed
+ZPL=`basename $FILE .png`.test.zpl
+DG=`basename $FILE .png`.test.dg
+PNG=`basename $FILE .png`.test.png
+
+python3 ./png_to_bw_16bit $FILE > $HEX
+#python3 ./rgb_data_to_bits $FILE > $HEX 
+python3 ./generate_compressed_image $HEX > $HEXCOMP
+python3 ./generate_dg $HEXCOMP $WIDTH $HEIGHT  > $DG
+python3 ./generate_test_zpl $HEXCOMP $WIDTH $HEIGHT  > $ZPL
+./pyzplr $ZPL
+gthumb $PNG

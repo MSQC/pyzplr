@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+
+import argparse
+import math
+import sys
+from PIL import Image
+import codecs
+import os
+
+parser = argparse.ArgumentParser(description='convert a raw data image to a compressed zpl image')
+parser.add_argument('image_filename', type=str, help='file to render')
+args = parser.parse_args()
+
+img = Image.open(args.image_filename).convert('1')
+for b in img.tobytes():
+    print("{0:02x}".format(255-b), end='')

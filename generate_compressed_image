@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+
+import argparse
+import math
+import sys
+
+parser = argparse.ArgumentParser(description='convert a raw data image to a compressed zpl image')
+parser.add_argument('image_filename', type=str, help='file to render')
+args = parser.parse_args()
+
+
+hex_bit_image = None
+with open(args.image_filename, 'rb') as f:
+    hex_bit_image = f.read()
+
+if hex_bit_image is None:
+    print(f"File '{args.image_filename}' could not be read", file=sys.stderr)
+
+# Build up the RLE prefix tables.
+run_length_prefixes = {}
+for ri, r in enumerate("GHIJKLMNOPQRSTUVWXY"):
+    ri += 1
+    run_length_prefixes[ri] = r
+    run_length_prefixes[ri*20] = r.lower()
+# 'Z' isn't actually valid because it's the same as 'g'
+# but it makes this all simpler to do
+run_length_prefixes[400] = 'z'
+
+def get_prefix(count, last_value):
+    prefix_amount = max([x for x in run_length_prefixes.keys() if x <= count])
+    prefix = ''
+    if prefix_amount > 1:
+        prefix = run_length_prefixes[prefix_amount]
+    return (prefix_amount, prefix+last_value)
+
+def encode_hex_bit_image(hex_bit_image):
+    count = 0
+    last_value = None
+    encoded_image = ''
+    for b in hex_bit_image:
+        # ignore (some) things that aren't hex chars
+        if b < 47:
+            continue
+        b = chr(b)
+        if last_value != b:
+            if last_value is not None:
+                while count > 0:
+                    (prefix_amount, prefixed_value) = get_prefix(count, last_value)
+                    encoded_image += prefixed_value
+                    count -= prefix_amount
+            last_value = b
+            count = 1
+        else:
+            count += 1
+    while count > 0:
+        (prefix_amount, prefixed_value) = get_prefix(count, last_value)
+        encoded_image += prefixed_value
+        count -= prefix_amount
+    return encoded_image
+
+encoded_image = encode_hex_bit_image(hex_bit_image)
+
+print(encoded_image, end='')

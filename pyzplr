@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+
+from ZPLLexer import ZPLLexer
+from ZPLParser import ZPLParser
+
+import barcode
+from barcode.writer import ImageWriter
+import pdf417gen
+from PIL import ImageMath
+
+import argparse
+import math
+import base64
+
+parser = argparse.ArgumentParser(description='convert zpl roughly to a png.')
+parser.add_argument('zpl_filename', type=str, help='file to render')
+parser.add_argument('png_filename', type=str, nargs='?', help='file to render to')
+args = parser.parse_args()
+
+if args.png_filename is None:
+    args.png_filename = args.zpl_filename.replace('.zpl', '.png')
+
+test = None
+with open(args.zpl_filename, 'rb') as f:
+    test = f.read().decode('LATIN1')
+
+zpl_lex = ZPLLexer().clone()
+zpl_lex.input(test)
+#for i in zpl_lex:
+#    print(i)
+#print()
+
+zpl_parser = ZPLParser()
+ast = zpl_parser.parse(test)#, debug=1)
+
+from PIL import Image
+from PIL import ImageFont
+from PIL import ImageDraw
+from PIL import ImageEnhance
+
+img1 = Image.new("1", (800, 1200), 1)
+draw1 = ImageDraw.Draw(img1, "1")
+
+x = 0
+y = 0
+font = ImageFont.truetype("Pillow/Tests/fonts/FreeMono.ttf", size=12)
+data = None
+metadata = None
+action = "text"
+files = {}
+loaded_file = None
+for command in ast:
+    if command[0] == '^FO':
+        xy = command[1].split(",")
+        x = int(xy[0])
+        y = int(xy[1])
+    elif command[0] == "^FD":
+        if len(command) == 2:
+            data = command[1]
+    elif command[0] == "^B7":
+        action = "pdf417"
+    elif command[0] == "^BC":
+        action = "code128"
+        metadata = command[1]
+    elif command[0] == "^GB":
+        action = "graphics_box"
+        data = command[1]
+    elif command[0] == "~DG":
+        data = command[1].split(",")
+        name = data[0].upper()
+        t = int(data[1]) # total bytes in image
+        w = int(data[2]) # bytes per row
+        data = data[3]
+        # "Alternative Data Compression Scheme for ~DG and ~DB Commands"
+        # It's a form of Run length encoding.
+        # Z isn't in the offical docs because g is 20, but z is, so we're just
+        # do this.
+        run_length = "GHIJKLMNOPQRSTUVWXYZ"
+        for ri, r in enumerate(run_length):
+            # starts at 1
+            ri += 1
+            i = data.find(r)
+            while i >= 0:
+                c = data[i+1]
+                # +2 because we need to replace the char we're duplicating
+                # as well.
+                data = data[0:i] + (c*ri) + data[i+2:]
+                i = data.find(r)
+            ri *= 20
+            r = r.lower()
+            i = data.find(r)
+            while i >= 0:
+                c = data[i+1]
+                data = data[0:i] + (c*ri) + data[i+2:]
+                i = data.find(r)
+        data = data[0:2*t]
+        data = bytes.fromhex(data.strip())
+        files[name] = {"w":w, "data":data}
+    elif command[0] == "^IM":
+        # The docs say there shouldn't be any params, but EasyPost puts
+        # ,1,1 after the name
+        data = command[1].split(",")
+        name = data[0].upper()
+        # I'm not sure what to do here, but I've seen it in labels?
+        if name in files:
+            loaded_file = files[name]
+            action = "place_image"
+    # A is the command, I just built the parser wrong
+    elif command[0] == "^A0":
+        d = command[1].split(",")
+        if len(d[2]) == 0:
+            d[2] = 0
+        size = int(max(float(d[1]), float(d[2]))/1.5)
+        font = ImageFont.truetype("Pillow/Tests/fonts/FreeSansBold.ttf", size=size)
+    elif command[0] == "^FS":
+        if data is not None:
+            if action == "text":
+                draw1.text((x, y), data, font=font)
+            if action == "pdf417":
+                i = pdf417gen.render_image(pdf417gen.encode(data))
+                img1.paste(i, (x,y))
+            if action == "place_image":
+                data = loaded_file
+                w = data["w"]
+                data = data["data"]
+                size = (w*8, int(len(data) / w))
+                i = Image.frombytes('1', size, data)
+                i = ImageMath.eval('255-(a)',a=i)
+                img1.paste(i, (x,y))
+            if action == "code128":
+                d = metadata.split(",")
+                o = d[0]
+                h = int(d[1])
+                f = d[2]
+                g = d[3]
+                bc = barcode.get_barcode_class('code128')
+                replacemnts = {
+                        '><':   62 ,
+                        '>0':   30 ,                    
+                        '>=':   94 ,                    
+                        '>1':   95 ,                    
+                        '>2':   96 ,                    
+                        '>3':   97 ,                    
+                        '>4':   98 ,                    
+                        '>5':   99 ,                    
+                        '>6':   100,                    
+                        '>7':   101,                    
+                        '>8':   102,                    
+                        '>9':   103,                    
+                        '>:':   104,                    
+                        '>;':   105,                    
+                        }
+                for seq, code in replacemnts.items():
+                    data = data.replace(seq, chr(code))
+
+                b = bc(data, writer=ImageWriter())
+                b._charset = 'C'
+                i = b.render(
+                    text='',
+                    writer_options={
+                        "module_height": h/8.0,
+                        "dpi": 200,
+                        })
+                img1.paste(i, (x,y))
+            if action == "graphics_box":
+                d = data.split(",")
+                w = int(d[0])
+                h = int(d[1])
+                t = int(d[2])
+                draw1.line([(x, y), (x+w, y)], fill=0, width=t)
+                draw1.line([(x+w, y), (x+w, y+h)], fill=0, width=t)
+                draw1.line([(x+w, y+h), (x, y+h)], fill=0, width=t)
+                draw1.line([(x, y+h), (x, y)], fill=0, width=t)
+        x = 0
+        y = 0
+        data = None
+        action = "text"
+        font = None
+        metadata = None
+
+img1.save(args.png_filename, 'PNG')
+
+
